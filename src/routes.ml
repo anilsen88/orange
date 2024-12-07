@@ -33,12 +33,39 @@ type route = {
   handler: (Cohttp.Request.t -> Cohttp_lwt.Body.t -> (string list -> (Cohttp.Response.t * Cohttp_lwt.Body.t) Lwt.t));
 }
 
+let clients = ref []
+
+let broadcast_message message =
+  Lwt_list.iter_p (fun (ws, _) ->
+    Cohttp_lwt.Websocket.send ws message
+  ) !clients
+
+let websocket_handler (conn : Cohttp_lwt.Websocket.t) req =
+  let client_id = Printf.sprintf "%s" (Uri.to_string (Cohttp.Request.uri req)) in
+  clients := (conn, client_id) :: !clients;  (* Add new client to the list *)
+
+  let rec listen () =
+    Cohttp_lwt.Websocket.recv conn >>= function
+    | Ok message ->
+      let broadcast_message = Printf.sprintf "Client %s says: %s" client_id message in
+      broadcast_message broadcast_message >>= fun () ;
+      listen ()  (* Continue listening for messages *)
+    | Error _ ->
+      clients := List.filter (fun (c, _) -> c <> conn) !clients;  (* Remove client on error *)
+      Lwt.return ()
+
+  in
+  listen ()
+
+let websocket_route = { method_ = "GET"; path = "/ws"; handler = websocket_handler }
+
 let routes : route list = [
   { method_ = "GET"; path = "/hello"; handler = hello_handler };
   { method_ = "GET"; path = "/goodbye"; handler = goodbye_handler };
   { method_ = "GET"; path = "/hello/name"; handler = hello_name_handler };
   { method_ = "GET"; path = "/hello/:name"; handler = dynamic_hello_handler };
   { method_ = "GET"; path = "/users/:id"; handler = user_handler };
+  websocket_route;  (* Add the WebSocket route *)
 ]
 
 let match_route method_ path =

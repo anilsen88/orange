@@ -32,14 +32,16 @@ let apply_middlewares middlewares handler req body =
 
 let callback req body =
   let middlewares = [log_middleware; cors_middleware; body_parser_middleware] in
-  let handler = fun req body ->
-    let method_ = Cohttp.Code.string_of_method (Cohttp.Request.meth req) in
-    let path = Uri.path (Cohttp.Request.uri req) in
-    match find_route method_ path with
-    | Some { handler } -> handler req body
-    | None -> Server.respond_string ~status:`Not_found ~body:"Not Found" ~headers:(Header.init ()) ()
-  in
-  apply_middlewares middlewares handler req body
+  let method_ = Cohttp.Code.string_of_method (Cohttp.Request.meth req) in
+  let path = Uri.path (Cohttp.Request.uri req) in
+  match find_route method_ path with
+  | Some { handler } ->
+    if method_ = "GET" && path = "/ws" then
+      Cohttp_lwt.Websocket.accept req >>= fun conn ->
+      handler conn req
+    else
+      apply_middlewares middlewares (fun req body -> handler req body) req body
+  | None -> Server.respond_string ~status:`Not_found ~body:"Not Found" ~headers:(Header.init ()) ()
 
 let start_server port =
   let server = Server.make ~callback () in
