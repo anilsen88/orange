@@ -3,6 +3,7 @@ open Cohttp
 open Cohttp_lwt_unix
 open Utils
 open Routes
+open Scheduler
 
 type middleware = (Cohttp.Request.t -> Cohttp_lwt.Body.t -> (Cohttp.Response.t * Cohttp_lwt.Body.t) Lwt.t) -> (Cohttp.Request.t -> Cohttp_lwt.Body.t -> (Cohttp.Response.t * Cohttp_lwt.Body.t) Lwt.t)
 
@@ -52,5 +53,5 @@ let start_server port =
 
 let () =
   let port = 8080 in
-  let _ = Lwt_main.run (start_server port) in
+  let _ = Lwt_main.run (start_scheduled_tasks () >>= fun () -> start_server port) in
   () 
