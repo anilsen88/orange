@@ -1,0 +1,14 @@
+(executable
+ (name main)
+ (public_name orange)
+ (libraries 
+  core
+  ppx_jane
+  ppx_let)
+ (preprocess
+  (pps
+   ppx_jane
+   ppx_let
+   ppx_deriving.show
+   ppx_deriving.eq
+   ppx_deriving.ord))) 
