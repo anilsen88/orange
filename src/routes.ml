@@ -22,10 +22,15 @@ let dynamic_hello_handler req _body =
     | None -> "Hello, stranger!" in
   Server.respond_string ~status:`OK ~body:response ~headers:(Header.init ()) ()
 
+let user_handler req _body params =
+  match params with
+  | [id] -> Server.respond_string ~status:`OK ~body:("User ID: " ^ id) ~headers:(Header.init ()) ()
+  | _ -> Server.respond_string ~status:`Bad_request ~body:"Invalid parameters" ()
+
 type route = {
   method_: string;
   path: string;
-  handler: (Cohttp.Request.t -> Cohttp_lwt.Body.t -> (Cohttp.Response.t * Cohttp_lwt.Body.t) Lwt.t);
+  handler: (Cohttp.Request.t -> Cohttp_lwt.Body.t -> (string list -> (Cohttp.Response.t * Cohttp_lwt.Body.t) Lwt.t));
 }
 
 let routes : route list = [
@@ -33,6 +38,7 @@ let routes : route list = [
   { method_ = "GET"; path = "/goodbye"; handler = goodbye_handler };
   { method_ = "GET"; path = "/hello/name"; handler = hello_name_handler };
   { method_ = "GET"; path = "/hello/:name"; handler = dynamic_hello_handler };
+  { method_ = "GET"; path = "/users/:id"; handler = user_handler };
 ]
 
 let match_route method_ path =
@@ -40,12 +46,22 @@ let match_route method_ path =
     match routes with
     | [] -> None
     | { method_; path = route_path; handler } :: rest ->
-      if method_ = method_ && (route_path = path || String.contains route_path ':') then
-        Some { method_; path = route_path; handler }
+      let path_parts = String.split_on_char '/' path in
+      let route_parts = String.split_on_char '/' route_path in
+      if method_ = method_ && List.length path_parts = List.length route_parts then
+        let params = List.fold_left2 (fun acc part route_part ->
+          match route_part with
+          | p when String.contains p ':' -> 
+              let param_name = String.sub p 1 (String.length p - 1) in
+              param_name :: acc
+          | _ when part = route_part -> acc
+          | _ -> raise Exit
+        ) [] path_parts route_parts in
+        Some { method_; path = route_path; handler = (fun req body -> handler req body params) }
       else
         aux rest
   in
-  aux routes
+  try aux routes with Exit -> None
 
 let find_route method_ path =
   match match_route method_ path with
