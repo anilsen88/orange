@@ -4,14 +4,40 @@ open Cohttp_lwt_unix
 open Utils
 open Routes
 
-let callback req body =
+type middleware = (Cohttp.Request.t -> Cohttp_lwt.Body.t -> (Cohttp.Response.t * Cohttp_lwt.Body.t) Lwt.t) -> (Cohttp.Request.t -> Cohttp_lwt.Body.t -> (Cohttp.Response.t * Cohttp_lwt.Body.t) Lwt.t)
+
+let log_middleware next req body =
   let method_ = Cohttp.Request.meth req in
   let path = Cohttp.Request.uri req |> Uri.path in
   log (Printf.sprintf "Received %s request for %s" (Cohttp.Code.string_of_method method_) path);
-  
-  match List.find_opt (fun (m, p, _) -> m = Cohttp.Code.string_of_method method_ && p = path) routes with
-  | Some (_, _, handler) -> handler req body
-  | None -> Server.respond_string ~status:`Not_found ~body:"Not Found" ~headers:(Header.init ()) ()
+  next req body
+
+let cors_middleware next req body =
+  let response = next req body in
+  Lwt.map (fun (resp, body) ->
+    let headers = Cohttp.Response.headers resp in
+    let headers = Header.add headers "Access-Control-Allow-Origin" "*" in
+    let headers = Header.add headers "Access-Control-Allow-Methods" "GET, POST, OPTIONS" in
+    let headers = Header.add headers "Access-Control-Allow-Headers" "Content-Type" in
+    (Cohttp.Response.make ~headers () , body)
+  ) response
+
+let body_parser_middleware next req body =
+  let%lwt body_content = Cohttp_lwt.Body.to_string body in
+  let new_req = Cohttp.Request.make ~body:(Cohttp_lwt.Body.of_string body_content) req in
+  next new_req (Cohttp_lwt.Body.of_string body_content)
+
+let apply_middlewares middlewares handler req body =
+  List.fold_right (fun mw acc -> mw acc) middlewares handler req body
+
+let callback req body =
+  let middlewares = [log_middleware; cors_middleware; body_parser_middleware] in
+  let handler = fun req body ->
+    match List.find_opt (fun (m, p, _) -> m = Cohttp.Code.string_of_method (Cohttp.Request.meth req) && p = Uri.path (Cohttp.Request.uri req)) routes with
+    | Some (_, _, handler) -> handler req body
+    | None -> Server.respond_string ~status:`Not_found ~body:"Not Found" ~headers:(Header.init ()) ()
+  in
+  apply_middlewares middlewares handler req body
 
 let start_server port =
   let server = Server.make ~callback () in
