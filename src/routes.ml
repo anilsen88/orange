@@ -30,6 +30,7 @@ let user_handler req _body params =
 type route = {
   method_: string;
   path: string;
+  version: string;
   handler: (Cohttp.Request.t -> Cohttp_lwt.Body.t -> (string list -> (Cohttp.Response.t * Cohttp_lwt.Body.t) Lwt.t));
 }
 
@@ -57,22 +58,25 @@ let websocket_handler (conn : Cohttp_lwt.Websocket.t) req =
   in
   listen ()
 
-let websocket_route = { method_ = "GET"; path = "/ws"; handler = websocket_handler }
+let websocket_route = { method_ = "GET"; path = "/ws"; version = "v1"; handler = websocket_handler }
 
 let routes : route list = [
-  { method_ = "GET"; path = "/hello"; handler = hello_handler };
-  { method_ = "GET"; path = "/goodbye"; handler = goodbye_handler };
-  { method_ = "GET"; path = "/hello/name"; handler = hello_name_handler };
-  { method_ = "GET"; path = "/hello/:name"; handler = dynamic_hello_handler };
-  { method_ = "GET"; path = "/users/:id"; handler = user_handler };
-  websocket_route;  (* Add the WebSocket route *)
+  { method_ = "GET"; path = "/v1/hello"; version = "v1"; handler = hello_handler };
+  { method_ = "GET"; path = "/v2/hello"; version = "v2"; handler = hello_handler };
+  { method_ = "GET"; path = "/v1/goodbye"; version = "v1"; handler = goodbye_handler };
+  { method_ = "GET"; path = "/v2/goodbye"; version = "v2"; handler = goodbye_handler };
+  { method_ = "GET"; path = "/v1/hello/name"; version = "v1"; handler = hello_name_handler };
+  { method_ = "GET"; path = "/v2/hello/name"; version = "v2"; handler = hello_name_handler };
+  { method_ = "GET"; path = "/v1/users/:id"; version = "v1"; handler = user_handler };
+  { method_ = "GET"; path = "/v2/users/:id"; version = "v2"; handler = user_handler };
+  websocket_route;
 ]
 
 let match_route method_ path =
   let rec aux routes =
     match routes with
     | [] -> None
-    | { method_; path = route_path; handler } :: rest ->
+    | { method_; path = route_path; version; handler } :: rest ->
       let path_parts = String.split_on_char '/' path in
       let route_parts = String.split_on_char '/' route_path in
       if method_ = method_ && List.length path_parts = List.length route_parts then
@@ -84,7 +88,7 @@ let match_route method_ path =
           | _ when part = route_part -> acc
           | _ -> raise Exit
         ) [] path_parts route_parts in
-        Some { method_; path = route_path; handler = (fun req body -> handler req body params) }
+        Some { method_; path = route_path; version; handler = (fun req body -> handler req body params) }
       else
         aux rest
   in
