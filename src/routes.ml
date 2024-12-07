@@ -22,9 +22,32 @@ let dynamic_hello_handler req _body =
     | None -> "Hello, stranger!" in
   Server.respond_string ~status:`OK ~body:response ~headers:(Header.init ()) ()
 
-let routes =
-  [ ("GET", "/hello", hello_handler)
-  ; ("GET", "/goodbye", goodbye_handler)
-  ; ("GET", "/hello/name", hello_name_handler)
-  ; ("GET", "/hello/:name", dynamic_hello_handler)
-  ] 
+type route = {
+  method_: string;
+  path: string;
+  handler: (Cohttp.Request.t -> Cohttp_lwt.Body.t -> (Cohttp.Response.t * Cohttp_lwt.Body.t) Lwt.t);
+}
+
+let routes : route list = [
+  { method_ = "GET"; path = "/hello"; handler = hello_handler };
+  { method_ = "GET"; path = "/goodbye"; handler = goodbye_handler };
+  { method_ = "GET"; path = "/hello/name"; handler = hello_name_handler };
+  { method_ = "GET"; path = "/hello/:name"; handler = dynamic_hello_handler };
+]
+
+let match_route method_ path =
+  let rec aux routes =
+    match routes with
+    | [] -> None
+    | { method_; path = route_path; handler } :: rest ->
+      if method_ = method_ && (route_path = path || String.contains route_path ':') then
+        Some { method_; path = route_path; handler }
+      else
+        aux rest
+  in
+  aux routes
+
+let find_route method_ path =
+  match match_route method_ path with
+  | Some route -> Some route
+  | None -> None

@@ -33,8 +33,10 @@ let apply_middlewares middlewares handler req body =
 let callback req body =
   let middlewares = [log_middleware; cors_middleware; body_parser_middleware] in
   let handler = fun req body ->
-    match List.find_opt (fun (m, p, _) -> m = Cohttp.Code.string_of_method (Cohttp.Request.meth req) && p = Uri.path (Cohttp.Request.uri req)) routes with
-    | Some (_, _, handler) -> handler req body
+    let method_ = Cohttp.Code.string_of_method (Cohttp.Request.meth req) in
+    let path = Uri.path (Cohttp.Request.uri req) in
+    match find_route method_ path with
+    | Some { handler } -> handler req body
     | None -> Server.respond_string ~status:`Not_found ~body:"Not Found" ~headers:(Header.init ()) ()
   in
   apply_middlewares middlewares handler req body
