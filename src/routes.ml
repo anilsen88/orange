@@ -1,6 +1,7 @@
 open Lwt.Infix
 open Cohttp
 open Cohttp_lwt_unix
+open RequestValidator
 
 let hello_handler _req _body =
   let response = "Hello, World!" in
@@ -11,16 +12,21 @@ let goodbye_handler _req _body =
   Server.respond_string ~status:`OK ~body:response ~headers:(Header.init ()) ()
 
 let hello_name_handler req _body =
-  match Uri.get_query_param (Cohttp.Request.uri req) "name" with
-  | Some name -> Server.respond_string ~status:`OK ~body:("Hello, " ^ name) ()
-  | None -> Server.respond_string ~status:`Bad_request ~body:"Missing name parameter" ()
+  validate_query_params req ["name"] >>= function
+  | Ok () ->
+      let name = Uri.get_query_param (Cohttp.Request.uri req) "name" in
+      Server.respond_string ~status:`OK ~body:("Hello, " ^ Option.get name) ()
+  | Error msg -> Server.respond_string ~status:`Bad_request ~body:msg ()
 
 let dynamic_hello_handler req _body =
-  let name = Uri.get_query_param (Cohttp.Request.uri req) "name" in
-  let response = match name with
-    | Some n -> Printf.sprintf "Hello, %s!" n
-    | None -> "Hello, stranger!" in
-  Server.respond_string ~status:`OK ~body:response ~headers:(Header.init ()) ()
+  validate_query_params req ["name"] >>= function
+  | Ok () ->
+      let name = Uri.get_query_param (Cohttp.Request.uri req) "name" in
+      let response = match name with
+      | Some n -> Printf.sprintf "Hello, %s!" n
+      | None -> "Hello, stranger!" in
+      Server.respond_string ~status:`OK ~body:response ~headers:(Header.init ()) ()
+  | Error msg -> Server.respond_string ~status:`Bad_request ~body:msg ()
 
 let user_handler req _body params =
   match params with
